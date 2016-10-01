@@ -70,6 +70,8 @@
 #include "oled.h"
 #include "usart.h"
 #include "usart2.h"
+// -YJ-
+#include "usart3.h"
 #include "adc.h"
 #include "timer.h"
 #include "motor.h"

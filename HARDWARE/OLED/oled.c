@@ -162,7 +162,7 @@ void OLED_Init(void)
 	GPIOB->CRH&=0XFF00FFFF; 
 	GPIOB->CRH|=0X00220000;//PB9 推挽输出   
 
-  RCC->APB2ENR|=1<<4;     	//使能PORTC时钟  
+    RCC->APB2ENR|=1<<4;     	//使能PORTC时钟  
 	RCC->APB2ENR|=1<<0;     	//使能AFIO时钟	
 	GPIOC->CRH&=0X00FFFFFF;	//PC13,14,15设置成输出 2MHz 推挽输出   
 	GPIOC->CRH|=0X22000000; 

@@ -7,4 +7,6 @@
 **************************************************************************/
 void oled_show(void);
 void APP_Show(void);
+void DataScope(void);
+
 #endif

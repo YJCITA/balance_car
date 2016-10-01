@@ -1,11 +1,19 @@
 #include "control.h"	
 #include "filter.h"	
-  /**************************************************************************
+#include "Usart2.h"
+#include "stdio.h"
+#include "string.h"
+
+char Buf[60];
+u8 printf_counter=0;
+/**************************************************************************
 作者：平衡小车之家
 我的淘宝小店：http://shop114407458.taobao.com/
 **************************************************************************/
 int Balance_Pwm,Velocity_Pwm,Turn_Pwm;
 u8 Flag_Target;
+
+int16_t usart_send_data[10];
 
 int TIM1_UP_IRQHandler(void)  
 {    
@@ -18,18 +26,45 @@ int TIM1_UP_IRQHandler(void)
             Get_Angle(Way_Angle);  //===更新姿态	
             return 0;	
         }     //10ms控制一次，为了保证M法测速的时间基准，首先读取编码器数据
-        Encoder_Left=Read_Encoder(2);  //===读取编码器的值，
-        Encoder_Right=Read_Encoder(3);  //===读取编码器的值
+        Encoder_Left = Read_Encoder(2);  //===读取编码器的值，
+        Encoder_Right = Read_Encoder(3);  //===读取编码器的值
         Get_Angle(Way_Angle);  //===更新姿态	
         
         Led_Flash(100);   //===LED闪烁;指示单片机正常运行	
         Key();   //===扫描按键状态 单击双击可以改变小车运行状态
-        Balance_Pwm = balance(Angle_Balance,Gyro_Balance);   //===平衡PID控制	
-        Velocity_Pwm = -velocity(Encoder_Left,Encoder_Right); //===速度环PID控制	 记住，速度反馈是正反馈，就是小车快的时候要慢下来就需要再跑快一点
-        Turn_Pwm = turn(Encoder_Left,Encoder_Right,Gyro_Turn); //===转向环PID控制     
-        Moto1 = Balance_Pwm+Velocity_Pwm+Turn_Pwm;                 //===计算左轮电机最终PWM
-        Moto2 = Balance_Pwm+Velocity_Pwm-Turn_Pwm;                 //===计算右轮电机最终PWM
+        Balance_Pwm = balance(Angle_Balance, Gyro_Balance);   //===平衡PID控制	
+        Velocity_Pwm = -velocity(Encoder_Left, Encoder_Right); //===速度环PID控制	 记住，速度反馈是正反馈，就是小车快的时候要慢下来就需要再跑快一点
+        Turn_Pwm = turn(Encoder_Left, Encoder_Right, Gyro_Turn); //===转向环PID控制     
+        Moto1 = Balance_Pwm  + Velocity_Pwm + Turn_Pwm;  //===计算左轮电机最终PWM
+        Moto2 = Balance_Pwm + Velocity_Pwm - Turn_Pwm;   //===计算右轮电机最终PWM
         Xianfu_Pwm();  //===PWM限幅
+
+        //-YJ-
+//        usart_send_data[0] = (s16)Angle_Balance*10;
+//        Comm_Send_msg_str(USART2, "Angle_Balance", usart_send_data, 1);
+
+//        if(printf_counter++ > 10)
+//        {
+//            printf_counter = 0;
+//            USART_STR(USART2,"Angle_Balance/10: ");	
+//            sprintf(Buf,",%d", (s16)(Angle_Balance*10));
+//            USART_STR(USART2,Buf);	
+
+//            
+//            USART_STR(USART2," Balance_Pwm: ");	
+//            sprintf(Buf,",%d", (s16)(Balance_Pwm));
+//            USART_STR(USART2,Buf);	
+//            
+//            USART_STR(USART2," Velocity_Pwm: ");	
+//            sprintf(Buf,",%d", (s16)(Velocity_Pwm));
+//            USART_STR(USART2,Buf);	
+//            
+//            USART_STR(USART2," Moto1: ");	
+//            sprintf(Buf,",%d", (s16)(Moto1));
+//            USART_STR(USART2,Buf);	
+//            USART_STR(USART2,"\r\n");	
+//        }
+        
         if(Turn_Off(Angle_Balance,Voltage)==0) //===如果不存在异常
         {
             Set_Pwm(Moto1,Moto2); //===赋值给PWM寄存器  
@@ -46,7 +81,7 @@ int TIM1_UP_IRQHandler(void)
 **************************************************************************/
 int balance(float Angle,float Gyro)
 {  
-    float Bias,kp=300,kd=1;
+    float Bias,kp = 300,kd = 1;
     int balance;
     Bias = Angle + 3;              //===求出平衡的角度中值 和机械相关 -0意味着身重中心在0度附近 如果身重中心在5度附近 那就应该减去5
     balance = kp*Bias + Gyro*kd;   //===计算平衡控制的电机PWM  PD控制   kp是P系数 kd是D系数 
@@ -63,33 +98,33 @@ int velocity(int encoder_left,int encoder_right)
 {  
     static float Velocity,Encoder_Least,Encoder,Movement;
     static float Encoder_Integral;
-    float kp=100, ki=0.1;
+    float kp = 200, ki = 0.3;
     //=============遥控前进后退部分=======================//
     if(1==Flag_Qian)	
     {
-        Movement=90/Flag_sudu; //===如果前进标志位置1 位移为负
+        Movement = 90/Flag_sudu; //===如果前进标志位置1 位移为负
     }else if(1==Flag_Hou)
     {
-        Movement=-90/Flag_sudu;  //===如果后退标志位置1 位移为正
+        Movement = -90/Flag_sudu;  //===如果后退标志位置1 位移为正
     }else  
     {
         Movement=0;	
     }
     
     //=============速度PI控制器=======================//	
-    Encoder_Least = (Encoder_Left+Encoder_Right) - 0;  //===获取最新速度偏差==测量速度（左右编码器之和）-目标速度（此处为零） 
+    Encoder_Least = (Encoder_Left + Encoder_Right)/2 - 0;  //===获取最新速度偏差==测量速度（左右编码器之和）-目标速度（此处为零） 
     Encoder *= 0.7;		                         //===一阶低通滤波器       
     Encoder += Encoder_Least*0.3;	             //===一阶低通滤波器    
-    Encoder_Integral +=Encoder;   //===积分出位移 积分时间：10ms
-    Encoder_Integral=Encoder_Integral-Movement;   //===接收遥控器数据，控制前进后退
+    Encoder_Integral += Encoder;   //===积分出位移 积分时间：10ms
+    Encoder_Integral = Encoder_Integral - Movement;   //===接收遥控器数据，控制前进后退
     if(Encoder_Integral>10000)  	
-        Encoder_Integral=10000;         //===积分限幅
+        Encoder_Integral=10000;  //===积分限幅
         
     if(Encoder_Integral<-10000)	
-        Encoder_Integral=-10000;         //===积分限幅  
+        Encoder_Integral=-10000;  //===积分限幅  
     Velocity = Encoder*kp + Encoder_Integral*ki; //===速度控制	
     if(Turn_Off(Angle_Balance,Voltage)==1)   
-        Encoder_Integral=0;    //===电机关闭后清除积分
+        Encoder_Integral = 0;    //===电机关闭后清除积分
         
     return Velocity;
 }
@@ -102,34 +137,44 @@ int velocity(int encoder_left,int encoder_right)
 **************************************************************************/
 int turn(int encoder_left,int encoder_right,float gyro)//转向控制
 {
-	  static float Turn_Target,Turn,Encoder_temp,Turn_Convert=0.9,Turn_Count;
-	  float Turn_Amplitude=88/Flag_sudu,Kp=42,Kd=0;     
-	  //=============遥控左右旋转部分=======================//
-  	if(1==Flag_Left||1==Flag_Right)                      //这一部分主要是根据旋转前的速度调整速度的起始速度，增加小车的适应性
-		{
-			if(++Turn_Count==1)
-			Encoder_temp=myabs(encoder_left+encoder_right);
-			Turn_Convert=50/Encoder_temp;
-			if(Turn_Convert<0.6)Turn_Convert=0.6;
-			if(Turn_Convert>3)Turn_Convert=3;
-		}	
-	  else
-		{
-			Turn_Convert=0.9;
-			Turn_Count=0;
-			Encoder_temp=0;
-		}			
-		if(1==Flag_Left)	           Turn_Target-=Turn_Convert;
-		else if(1==Flag_Right)	     Turn_Target+=Turn_Convert; 
-		else Turn_Target=0;
-	
-    if(Turn_Target>Turn_Amplitude)  Turn_Target=Turn_Amplitude;    //===转向速度限幅
-	  if(Turn_Target<-Turn_Amplitude) Turn_Target=-Turn_Amplitude;
-		if(Flag_Qian==1||Flag_Hou==1)  Kd=1;        
-		else Kd=0;   //转向的时候取消陀螺仪的纠正 有点模糊PID的思想
-  	//=============转向PD控制器=======================//
-		  Turn=-Turn_Target*Kp -gyro*Kd;                 //===结合Z轴陀螺仪进行PD控制
-	  return Turn;
+    static float Turn_Target,Turn,Encoder_temp,Turn_Convert=0.9,Turn_Count;
+    float Turn_Amplitude=88/Flag_sudu,Kp=42,Kd=0;     
+    //=============遥控左右旋转部分=======================//
+    if(1==Flag_Left||1==Flag_Right)                      //这一部分主要是根据旋转前的速度调整速度的起始速度，增加小车的适应性
+    {
+        if(++Turn_Count==1)
+        Encoder_temp=myabs(encoder_left+encoder_right);
+        Turn_Convert=50/Encoder_temp;
+        if(Turn_Convert<0.6)Turn_Convert=0.6;
+        if(Turn_Convert>3)Turn_Convert=3;
+    }else
+    {
+        Turn_Convert=0.9;
+        Turn_Count=0;
+        Encoder_temp=0;
+    }	
+    
+    if(1==Flag_Left)
+        Turn_Target-=Turn_Convert;
+    else if(1==Flag_Right)
+        Turn_Target+=Turn_Convert; 
+    else 
+        Turn_Target=0;
+
+    if(Turn_Target>Turn_Amplitude)  
+        Turn_Target=Turn_Amplitude;    //===转向速度限幅
+        
+    if(Turn_Target<-Turn_Amplitude) 
+        Turn_Target=-Turn_Amplitude;
+    
+    if(Flag_Qian==1 || Flag_Hou==1) 
+        Kd=1;        
+    else 
+        Kd=0;   //转向的时候取消陀螺仪的纠正 有点模糊PID的思想
+        
+    //=============转向PD控制器=======================//
+    Turn = -Turn_Target*Kp - gyro*Kd;                 //===结合Z轴陀螺仪进行PD控制
+    return Turn;
 }
 
 /**************************************************************************

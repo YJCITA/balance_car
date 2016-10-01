@@ -1,5 +1,10 @@
-
 #include "usart2.h"
+#include "stm32f10x.h"
+#include "stm32f10x_usart.h"
+#include "usart.h"
+#include "misc.h"
+#include "stdio.h"
+#include "string.h"
 
  u8 mode_data[8];
  u8 six_data_stop[3]={0X59,0X59,0X59};  //停止数据样本
@@ -88,4 +93,65 @@ if(USART2->SR&(1<<5))//接收到数据
 		mode_data[1]=mode_data[0];
 	}  											 				 
 } 
+
+/*
+  串口发送函数
+*/
+void USART_Send(USART_TypeDef* USARTx, uint8_t *Dat, uint16_t len)
+{
+  uint16_t i;
+  for(i=0;i<len;i++)
+  {
+  	USART_SendData(USARTx, Dat[i]);
+	while(USART_GetFlagStatus(USARTx, USART_FLAG_TC)==RESET);     
+  }
+}
+
+/*
+  串口发送字符串
+*/
+void USART_STR(USART_TypeDef* USARTx, char *str)
+{
+    uint8_t len,i;
+	len=strlen(str);
+	for(i=0;i<len;i++)
+	{
+	  	USART_SendData(USARTx, str[i]);
+		while(USART_GetFlagStatus(USARTx, USART_FLAG_TC)==RESET); 	
+	}
+}
+
+
+static void Char2Str(char *Datout,char *Datin,unsigned char len)
+{
+    unsigned char j;
+    
+    for(j=0;j<len;j++)
+    {
+        sprintf(Datout,",%02X",Datin[j]);
+        Datout+=3;	
+    }	
+}
+
+//*****************************
+//   TODO 09.11 打印出的数据格式还有问题
+///*****************************/
+void Comm_Send_msg_str(USART_TypeDef* USARTx, char *data_name, int16_t *data, uint16_t len)
+{
+    char Buf[60];
+    uint16_t i;
+
+    USART_STR(USARTx, data_name);
+    
+    for(i=0; i<len; i++)
+    {
+        memset(Buf,0x00,60);  // 清空
+        sprintf(Buf, ": %d", data);
+    	USART_STR(USARTx, Buf);	        
+    }   
+    
+	USART_STR(USARTx,"\r\n");				
+}
+
+
 
