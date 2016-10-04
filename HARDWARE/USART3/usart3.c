@@ -1,4 +1,3 @@
-
 #include "usart3.h"
 u8 Usart3_Receive;
 u8 mode_data_3[8];

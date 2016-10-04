@@ -95,6 +95,23 @@ extern int Voltage,Voltage_Zheng,Voltage_Xiao;//电池电压采样相关的变量
 extern float Angle_Balance,Gyro_Balance,Gyro_Turn; //平衡倾角 平衡陀螺仪 转向陀螺仪
 extern float Show_Data_Mb;                         //全局显示变量，用于显示需要查看的数据
 extern int Temperature;
+
+extern u8 RxBuffer2[1000];	 
+extern u8 RxBuffer2_tmp[1000];
+extern u8 FLAG_stop_uart2_debug_msg ; // 接收调参信息时，1:禁止打印，除非正常收到数据
+
+
+extern u16 RxCounter2 ;	// 接收计数
+extern u16 RxCounter2_frame;	// 接收完一整帧之后的直接数量
+extern u8 ReceiveState2;
+extern float g_att_kp ;
+extern float g_att_kd ;
+extern float g_vel_kp;
+extern float g_vel_ki ;
+extern float I_vel_error;
+
+
+
 /////////////////////////////////////////////////////////////////  
 void Stm32_Clock_Init(u8 PLL);  //时钟初始化  
 void Sys_Soft_Reset(void);      //系统软复位

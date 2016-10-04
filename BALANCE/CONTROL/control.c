@@ -6,6 +6,7 @@
 
 char Buf[60];
 u8 printf_counter=0;
+float I_vel_error = 0;
 /**************************************************************************
 作者：平衡小车之家
 我的淘宝小店：http://shop114407458.taobao.com/
@@ -15,9 +16,14 @@ u8 Flag_Target;
 
 int16_t usart_send_data[10];
 
+float g_pitch_cmd;
+float g_vel_cmd = 0;
+int g_pwm_out;
+
+
 int TIM1_UP_IRQHandler(void)  
 {    
-    if(TIM1->SR&0X0001)//5ms定时中断
+    if(TIM1->SR&0X0001)//5ms定时中断 TIM1->SR&0X0001
     {   
         TIM1->SR&=~(1<<0);   //===清除定时器1中断标志位		 
         Flag_Target = !Flag_Target;
@@ -32,38 +38,45 @@ int TIM1_UP_IRQHandler(void)
         
         Led_Flash(100);   //===LED闪烁;指示单片机正常运行	
         Key();   //===扫描按键状态 单击双击可以改变小车运行状态
-        Balance_Pwm = balance(Angle_Balance, Gyro_Balance);   //===平衡PID控制	
-        Velocity_Pwm = -velocity(Encoder_Left, Encoder_Right); //===速度环PID控制	 记住，速度反馈是正反馈，就是小车快的时候要慢下来就需要再跑快一点
-        Turn_Pwm = turn(Encoder_Left, Encoder_Right, Gyro_Turn); //===转向环PID控制     
-        Moto1 = Balance_Pwm  + Velocity_Pwm + Turn_Pwm;  //===计算左轮电机最终PWM
-        Moto2 = Balance_Pwm + Velocity_Pwm - Turn_Pwm;   //===计算右轮电机最终PWM
+        
+//        Balance_Pwm = balance(Angle_Balance, Gyro_Balance);   //===平衡PID控制	
+//        Velocity_Pwm = -velocity(Encoder_Left, Encoder_Right); //===速度环PID控制	 记住，速度反馈是正反馈，就是小车快的时候要慢下来就需要再跑快一点
+//        Turn_Pwm = turn(Encoder_Left, Encoder_Right, Gyro_Turn); //===转向环PID控制 
+//        Moto1 = Balance_Pwm  + Velocity_Pwm + Turn_Pwm;  //===计算左轮电机最终PWM
+//        Moto2 = Balance_Pwm + Velocity_Pwm - Turn_Pwm;   //===计算右轮电机最终PWM
+
+        g_pitch_cmd = velocity_pid(g_vel_cmd, Encoder_Left, Encoder_Right);
+        g_pwm_out = att_pid(g_pitch_cmd, Angle_Balance, Gyro_Balance); // 
+        Moto1 = g_pwm_out;
+        Moto2 = g_pwm_out;
+        
         Xianfu_Pwm();  //===PWM限幅
 
         //-YJ-
 //        usart_send_data[0] = (s16)Angle_Balance*10;
 //        Comm_Send_msg_str(USART2, "Angle_Balance", usart_send_data, 1);
 
-//        if(printf_counter++ > 10)
-//        {
-//            printf_counter = 0;
-//            USART_STR(USART2,"Angle_Balance/10: ");	
-//            sprintf(Buf,",%d", (s16)(Angle_Balance*10));
-//            USART_STR(USART2,Buf);	
-
+        if(printf_counter++ > 20)
+        {
+            printf_counter = 0;
+            USART_STR(USART2,"g_pitch_cmd: ");	
+            sprintf(Buf,",%d", (s16)(g_pitch_cmd));
+            USART_STR(USART2,Buf);	
+            
+            USART_STR(USART2," g_pwm_out: ");	
+            sprintf(Buf,",%d", (s16)(g_pwm_out));
+            USART_STR(USART2,Buf);
+            USART_STR(USART2,"\r\n");
 //            
-//            USART_STR(USART2," Balance_Pwm: ");	
-//            sprintf(Buf,",%d", (s16)(Balance_Pwm));
+//            USART_STR(USART2," Zg_pwm_out: ");	
+//            sprintf(Buf,",%d", (s16)(g_pwm_out));
 //            USART_STR(USART2,Buf);	
-//            
-//            USART_STR(USART2," Velocity_Pwm: ");	
-//            sprintf(Buf,",%d", (s16)(Velocity_Pwm));
-//            USART_STR(USART2,Buf);	
-//            
-//            USART_STR(USART2," Moto1: ");	
+//           
+//            USART_STR(USART2," ZMoto1: ");	
 //            sprintf(Buf,",%d", (s16)(Moto1));
 //            USART_STR(USART2,Buf);	
-//            USART_STR(USART2,"\r\n");	
-//        }
+            	
+        }
         
         if(Turn_Off(Angle_Balance,Voltage)==0) //===如果不存在异常
         {
@@ -212,7 +225,7 @@ void Set_Pwm(int moto1,int moto2)
 **************************************************************************/
 void Xianfu_Pwm(void)
 {	
-    int Amplitude=7100;    //===PWM满幅是7200 限制在7100
+    int Amplitude=9000;    //===PWM满幅是7200 限制在7100
     if(Moto1<-Amplitude) 
         Moto1=-Amplitude;  
     
@@ -246,18 +259,18 @@ void Key(void)
 **************************************************************************/
 u8 Turn_Off(float angle, int voltage)
 {
-	    u8 temp;
-			if(angle<-40||angle>40||1==Flag_Stop)
-			{	                                                 //===倾角大于40度关闭电机
-      temp=1;                                            //===Flag_Stop置1关闭电机
-			AIN1=0;                                            //===可自行增加主板温度过高时关闭电机
-			AIN2=0;
-			BIN1=0;
-			BIN2=0;
-      }
-			else
-      temp=0;
-      return temp;			
+    u8 temp;
+    if(angle<-40||angle>40||1==Flag_Stop) //===倾角大于40度关闭电机
+    {	                                                
+        temp=1;   //===Flag_Stop置1关闭电机
+        AIN1=0;   //===可自行增加主板温度过高时关闭电机
+        AIN2=0;
+        BIN1=0;
+        BIN2=0;
+    }
+    else
+    temp=0;
+    return temp;			
 }
 	
 /**************************************************************************
@@ -274,7 +287,7 @@ void Get_Angle(u8 way)
     }			
     else
     {
-        Gyro_Y = (I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_YOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_YOUT_L);    //读取Y轴陀螺仪
+        Gyro_Y = (I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_YOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_YOUT_L);    //读取Y轴陀螺仪 量程2000°/s
         Gyro_Z = (I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_ZOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_ZOUT_L);    //读取Z轴陀螺仪
         Accel_X = (I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_XOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_XOUT_L); //读取X轴加速度记
         Accel_Z = (I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_ZOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_ZOUT_L); //读取Z轴加速度记
@@ -282,9 +295,10 @@ void Get_Angle(u8 way)
         if(Gyro_Z>32768)  Gyro_Z-=65536;     //数据类型转换
         if(Accel_X>32768) Accel_X-=65536;    //数据类型转换
         if(Accel_Z>32768) Accel_Z-=65536;    //数据类型转换
-        Gyro_Balance = -Gyro_Y; //更新平衡角速度
+        
         Accel_Y = atan2(Accel_X,Accel_Z)*180/PI;   //计算与地面的夹角	
-        Gyro_Y = Gyro_Y/16.4;   //陀螺仪量程转换	
+        Gyro_Y = Gyro_Y/16.4;   //陀螺仪量程转换，并转换符号
+        Gyro_Balance = -Gyro_Y; //更新平衡角速度
         if(Way_Angle==2)
         {
             Kalman_Filter(Accel_Y, -Gyro_Y);//卡尔曼滤波 
@@ -307,3 +321,81 @@ int myabs(int a)
 	  else temp=a;
 	  return temp;
 }
+
+/**************************************************************************
+函数功能：速度PI控制 修改前进后退速度，请修改Movement的值，比如，改成-60和60就比较慢了
+入口参数：左轮编码器、右轮编码器
+返回  值：速度环控制
+作    者：YJ  TODO
+**************************************************************************/
+int velocity_pid(float vel_cmd, int encoder_left, int encoder_right)
+{  
+    static float vel_filter = 0,  Movement = 0;
+    float vel_new, vel_error, pitch_cmd;
+    float kp = g_vel_kp, ki = g_vel_ki;
+// TODO: 加入速度的计算
+    
+    //=============遥控前进后退部分=======================//
+    if(1 == Flag_Qian)	
+    {
+        Movement = 90/Flag_sudu; //===如果前进标志位置1 位移为负
+    }else if(1 == Flag_Hou)
+    {
+        Movement = -90/Flag_sudu;  //===如果后退标志位置1 位移为正
+    }else  
+    {
+        Movement = 0;	
+    }
+    vel_cmd = Movement;
+    
+    vel_new = (Encoder_Left + Encoder_Right)/2;  // 计算当前速度
+    vel_filter = lowpass_fiter(vel_filter, vel_new, 0.005, 3);
+    vel_error = vel_filter - vel_cmd;
+    I_vel_error += vel_error;
+    if(I_vel_error > 10000)
+    {
+        I_vel_error = 10000;  //===积分限幅
+    }else if(I_vel_error < -10000)
+    {
+        I_vel_error = -10000;
+    }
+
+    pitch_cmd = kp*vel_error + ki*I_vel_error; //===速度控制	     
+	
+    if(Turn_Off(Angle_Balance,Voltage) == 1)   
+        I_vel_error = 0;    //===电机关闭后清除积分
+        
+    return pitch_cmd;
+}
+
+
+int att_pid(float pitch_cmd, float pitch, float w)
+{  
+    static float w_filter = 0;
+    float v_error, kp = g_att_kp, kd = g_att_kd;
+    int pwm;
+    float pitch_trim = 0;  // pitch上由于安装误差，引入的配平的角度
+
+    w_filter = lowpass_fiter(w_filter, w, 0.005, 40);
+    v_error = pitch -  (pitch_cmd + pitch_trim) ;   // 正反馈
+    pwm = kp*v_error + kd*w_filter;   //===计算平衡控制的电机PWM  PD控制   kp是P系数 kd是D系数 
+    return pwm;
+}
+
+
+float lowpass_fiter(float y_pre, float y_new, float dt, float filt_hz)
+{
+    float alpha, rc, pi=3.1415, y;
+    if(filt_hz == 0)
+    {
+        alpha = 1;
+    }else
+    {
+        rc = 1/(2*pi*filt_hz);
+        alpha = dt/(dt + rc);
+     }    
+    y = y_pre + alpha*(y_new - y_pre);
+    return y;
+    
+}
+
