@@ -22,6 +22,8 @@ int myabs(int a);
 int att_pid(float pitch_cmd, float pitch, float w);
 float lowpass_fiter(float y_pre, float y_new, float dt, float filt_hz);
 int velocity_pid(float vel_cmd, int encoder_left, int encoder_right);
+int turn_pid(int encoder_left, int encoder_right, float gyro_z);
+
 
 
     

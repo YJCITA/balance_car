@@ -18,6 +18,7 @@ int16_t usart_send_data[10];
 
 float g_pitch_cmd;
 float g_vel_cmd = 0;
+int g_turn_pwm = 0;
 int g_pwm_out;
 
 
@@ -32,8 +33,8 @@ int TIM1_UP_IRQHandler(void)
             Get_Angle(Way_Angle);  //===更新姿态	
             return 0;	
         }     //10ms控制一次，为了保证M法测速的时间基准，首先读取编码器数据
-        Encoder_Left = Read_Encoder(2);  //===读取编码器的值，
-        Encoder_Right = Read_Encoder(3);  //===读取编码器的值
+        Encoder_Left = -Read_Encoder(2);  //===读取编码器的值， 前进为 +
+        Encoder_Right = -Read_Encoder(3);  //===读取编码器的值
         Get_Angle(Way_Angle);  //===更新姿态	
         
         Led_Flash(100);   //===LED闪烁;指示单片机正常运行	
@@ -45,10 +46,13 @@ int TIM1_UP_IRQHandler(void)
 //        Moto1 = Balance_Pwm  + Velocity_Pwm + Turn_Pwm;  //===计算左轮电机最终PWM
 //        Moto2 = Balance_Pwm + Velocity_Pwm - Turn_Pwm;   //===计算右轮电机最终PWM
 
-        g_pitch_cmd = velocity_pid(g_vel_cmd, Encoder_Left, Encoder_Right);
-        g_pwm_out = att_pid(g_pitch_cmd, Angle_Balance, Gyro_Balance); // 
-        Moto1 = g_pwm_out;
-        Moto2 = g_pwm_out;
+//        g_pitch_cmd = velocity_pid(g_vel_cmd, Encoder_Left, Encoder_Right);
+//        g_pwm_out = att_pid(g_pitch_cmd, Angle_Balance, Gyro_Balance); 
+        g_pwm_out = velocity_pid(g_vel_cmd, Encoder_Left, Encoder_Right);
+
+        g_turn_pwm =  turn_pid(Encoder_Left, Encoder_Right, Gyro_Turn);
+        Moto1 = g_pwm_out + g_turn_pwm;
+        Moto2 = g_pwm_out - g_turn_pwm;
         
         Xianfu_Pwm();  //===PWM限幅
 
@@ -58,20 +62,20 @@ int TIM1_UP_IRQHandler(void)
 
         if(printf_counter++ > 20)
         {
-            printf_counter = 0;
-            USART_STR(USART2,"g_pitch_cmd: ");	
-            sprintf(Buf,",%d", (s16)(g_pitch_cmd));
-            USART_STR(USART2,Buf);	
-            
-            USART_STR(USART2," g_pwm_out: ");	
-            sprintf(Buf,",%d", (s16)(g_pwm_out));
-            USART_STR(USART2,Buf);
-            USART_STR(USART2,"\r\n");
-//            
-//            USART_STR(USART2," Zg_pwm_out: ");	
-//            sprintf(Buf,",%d", (s16)(g_pwm_out));
+//            printf_counter = 0;
+//            USART_STR(USART2,"g_pitch_cmd: ");	
+//            sprintf(Buf,",%d", (s16)(g_pitch_cmd));
 //            USART_STR(USART2,Buf);	
-//           
+//            
+//            USART_STR(USART2," g_pwm_out: ");	
+//            sprintf(Buf,",%d", (s16)(g_pwm_out));
+//            USART_STR(USART2,Buf);
+//            
+//            USART_STR(USART2," g_turn_pwm: ");	
+//            sprintf(Buf,",%d", (s16)(g_turn_pwm));
+//            USART_STR(USART2,Buf);	
+//            USART_STR(USART2,"\r\n");
+//            
 //            USART_STR(USART2," ZMoto1: ");	
 //            sprintf(Buf,",%d", (s16)(Moto1));
 //            USART_STR(USART2,Buf);	
@@ -330,7 +334,7 @@ int myabs(int a)
 **************************************************************************/
 int velocity_pid(float vel_cmd, int encoder_left, int encoder_right)
 {  
-    static float vel_filter = 0,  Movement = 0;
+    static float vel_filter = 0, vel_cmd_filter = 0,  Movement = 0;
     float vel_new, vel_error, pitch_cmd;
     float kp = g_vel_kp, ki = g_vel_ki;
 // TODO: 加入速度的计算
@@ -338,19 +342,20 @@ int velocity_pid(float vel_cmd, int encoder_left, int encoder_right)
     //=============遥控前进后退部分=======================//
     if(1 == Flag_Qian)	
     {
-        Movement = 90/Flag_sudu; //===如果前进标志位置1 位移为负
+        Movement = 60/Flag_sudu; //===如果前进标志位置1 位移为负
     }else if(1 == Flag_Hou)
     {
-        Movement = -90/Flag_sudu;  //===如果后退标志位置1 位移为正
+        Movement = -60/Flag_sudu;  //===如果后退标志位置1 位移为正
     }else  
     {
         Movement = 0;	
     }
-    vel_cmd = Movement;
+    vel_cmd_filter = lowpass_fiter(vel_cmd_filter, Movement, 0.005, 2);
+    vel_cmd = vel_cmd_filter;
     
     vel_new = (Encoder_Left + Encoder_Right)/2;  // 计算当前速度
-    vel_filter = lowpass_fiter(vel_filter, vel_new, 0.005, 3);
-    vel_error = vel_filter - vel_cmd;
+    vel_filter = lowpass_fiter(vel_filter, vel_new, 0.005, 10);
+    vel_error = vel_cmd - vel_filter;
     I_vel_error += vel_error;
     if(I_vel_error > 10000)
     {
@@ -367,6 +372,55 @@ int velocity_pid(float vel_cmd, int encoder_left, int encoder_right)
         
     return pitch_cmd;
 }
+
+// 转向 pid
+int turn_pid(int encoder_left, int encoder_right, float gyro_z)
+{
+    static float Turn_Target,Turn,Encoder_temp,Turn_Convert=0.9,Turn_Count = 0;
+    float Turn_Amplitude = 70/Flag_sudu, Kp=40, Kd=0;     
+    //=============遥控左右旋转部分=======================//
+    //这一部分主要是根据旋转前的速度调整速度的起始速度，增加小车的适应性
+    if(1==Flag_Left||1==Flag_Right)                      
+    {
+        if(++Turn_Count==1)
+            Encoder_temp = myabs(encoder_left+encoder_right);
+        
+        Turn_Convert = 50/Encoder_temp;
+        if(Turn_Convert < 0.6)
+            Turn_Convert = 0.6;
+        if(Turn_Convert > 3)
+            Turn_Convert = 3;
+    }
+    else
+    {
+        Turn_Convert = 0.9;
+        Turn_Count = 0;
+        Encoder_temp = 0;
+    }	
+    
+    if(1==Flag_Left)
+        Turn_Target -= Turn_Convert;
+    else if(1==Flag_Right)
+        Turn_Target += Turn_Convert; 
+    else 
+        Turn_Target = 0;
+
+    if(Turn_Target > Turn_Amplitude)  
+        Turn_Target = Turn_Amplitude;    //===转向速度限幅
+        
+    if(Turn_Target < -Turn_Amplitude) 
+        Turn_Target = -Turn_Amplitude;
+    
+    if(Flag_Qian==1 || Flag_Hou==1) 
+        Kd = 1;        
+    else 
+        Kd = 0;   //转向的时候取消陀螺仪的纠正 有点模糊PID的思想
+        
+    //=============转向PD控制器=======================//
+    Turn = -Turn_Target*Kp - gyro_z*Kd;  //===结合Z轴陀螺仪进行PD控制
+    return Turn;
+}
+
 
 
 int att_pid(float pitch_cmd, float pitch, float w)

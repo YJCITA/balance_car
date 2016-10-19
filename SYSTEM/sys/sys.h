@@ -109,7 +109,7 @@ extern float g_att_kd ;
 extern float g_vel_kp;
 extern float g_vel_ki ;
 extern float I_vel_error;
-
+extern u32 g_distance;  //³¬Éù²¨²â¾à
 
 
 /////////////////////////////////////////////////////////////////  

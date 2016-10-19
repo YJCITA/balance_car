@@ -81,7 +81,9 @@ void APP_Show(void)
     app_3=Encoder_Right*1.1; if(app_3<0)app_3=-app_3;			
     app_2=Encoder_Left*1.1;  if(app_2<0)app_2=-app_2;
 //    printf("Z%d:%d:%d:%dL$",(u8)app_2,(u8)app_3,(u8)app_4,(int)Angle_Balance);
-    sprintf(Buf,"Z%d:%d:%d:%dL$",(u8)app_2,(u8)app_3,(u8)app_4,(int)Angle_Balance);
+//    sprintf(Buf,"Z%d:%d:%d:%dL$",(u8)app_2,(u8)app_3,(u8)app_4,(int)Angle_Balance);
+    sprintf(Buf,"Z%d:%d:%d:%dL$",(u8)Flag_Qian,(u8)Flag_Hou,(u8)app_4,(int)Angle_Balance);    
+
     USART_STR(USART2,Buf);
 }
 

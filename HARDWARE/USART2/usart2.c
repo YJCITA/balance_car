@@ -42,8 +42,8 @@ void uart2_init(u32 pclk2,u32 bound)
 	MY_NVIC_Init(3,3,USART2_IRQn,2);//组2，最低优先级 
 
     // -YJ- 打开空闲中断 
-    USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);    
-    USART_ITConfig(USART2, USART_IT_IDLE, ENABLE);  // 当完成收完一帧的时候会触发中断，但是这个本质是检测空闲，如果连续发??
+//    USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);    
+//    USART_ITConfig(USART2, USART_IT_IDLE, ENABLE);  // 当完成收完一帧的时候会触发中断，但是这个本质是检测空闲，如果连续发??
 }
 
 
@@ -162,34 +162,37 @@ void USART2_Configuration(u32 baud_rate)
 */				  
 void USART2_IRQHandler(void)
 {
-    u8 Clear = Clear;		// 用来消除编译器的"没有用到"提醒
-    if(USART_GetITStatus(USART2, USART_IT_RXNE) != RESET)
-    {
-		RxBuffer2_tmp[RxCounter2++] = USART_ReceiveData(USART2);	//接收数据 逐个字节接收											   				 
+    do_app_commond();
+    
+//    u8 Clear = Clear;		// 用来消除编译器的"没有用到"提醒
+//    if(USART_GetITStatus(USART2, USART_IT_RXNE) != RESET)
+//    {
+//		RxBuffer2_tmp[RxCounter2++] = USART_ReceiveData(USART2);	//接收数据 逐个字节接收											   				 
 
-    }
-	else if(USART_GetITStatus(USART2, USART_IT_IDLE) != RESET)	// 如果接收到1帧数据
-	{
-		Clear = USART2->SR;		// 读SR寄存器
-		Clear = USART2->DR;		// 读DR寄存器(先读SR再读DR，就是为了清除IDLE中断)
-		ReceiveState2 = 1;			// 标记接收到了1帧数据
+//    }
+//	else if(USART_GetITStatus(USART2, USART_IT_IDLE) != RESET)	// 如果接收到1帧数据
+//	{
+//		Clear = USART2->SR;		// 读SR寄存器
+//		Clear = USART2->DR;		// 读DR寄存器(先读SR再读DR，就是为了清除IDLE中断)
+//		ReceiveState2 = 1;			// 标记接收到了1帧数据
 
-        FLAG_stop_uart2_debug_msg = 1; // 接收调参信息时，1:禁止打印，除非正常收到数据
+//        FLAG_stop_uart2_debug_msg = 1; // 接收调参信息时，1:禁止打印，除非正常收到数据
 
-        memset(RxBuffer2, 0, 1000);
-        memcpy(RxBuffer2, RxBuffer2_tmp, RxCounter2);
-        memset(RxBuffer2_tmp, 0, 1000);
+//        memset(RxBuffer2, 0, 1000);
+//        memcpy(RxBuffer2, RxBuffer2_tmp, RxCounter2);
+//        memset(RxBuffer2_tmp, 0, 1000);
 
-        RxCounter2_frame = RxCounter2;
-        RxCounter2 = 0;            
-	}
-	
+//        RxCounter2_frame = RxCounter2;
+//        RxCounter2 = 0;            
+//	}
+//	
 
-    /*禁止发送中断 */
-    if(USART_GetITStatus(USART2, USART_IT_TXE) != RESET)                    
-    { 
-        USART_ITConfig(USART2, USART_IT_TXE, DISABLE);
-    }
+//    /*禁止发送中断 */
+//    if(USART_GetITStatus(USART2, USART_IT_TXE) != RESET)                    
+//    { 
+//        USART_ITConfig(USART2, USART_IT_TXE, DISABLE);
+//    }
+//    }
 }
 
 
@@ -258,5 +261,52 @@ void Comm_Send_msg_str(USART_TypeDef* USARTx, char *data_name, int16_t *data, ui
 	USART_STR(USARTx,"\r\n");				
 }
 
+// 2016.10.06 do app commond
+void do_app_commond(void)
+{	
+    if(USART2->SR&(1<<5))//接收到数据
+    {	  
+        static	int uart_receive=0;//蓝牙接收相关变量
+        uart_receive = USART2->DR; 
+        mode_data[0] = uart_receive;
+        if(mode_data[0] == six_data_start[0] && mode_data[1]==six_data_start[1] && mode_data[2]==six_data_start[2])
+        {	
+            Flag_Stop = 0;   //低速挡 小车关闭电机
+            mode_data[0] = 0;	
+            mode_data[1] = 0;	
+            mode_data[2] = 0;	
+        }
+        if(mode_data[0]==six_data_stop[0] &&mode_data[1]==six_data_stop[1] &&mode_data[2]==six_data_stop[2])
+        {	
+            Flag_Stop = 1;   //高速挡 小车启动电机
+            mode_data[0] = 0;	
+            mode_data[1] = 0;	
+            mode_data[2] = 0;	
+        }
+        if(uart_receive==0x59)  
+            Flag_sudu = 2;  //低速挡（默认值）
+        if(uart_receive==0x58)  
+            Flag_sudu = 1;  //高速档
 
+        if(uart_receive > 10)  //默认使用app为：MiniBalanceV3.5 因为MiniBalanceV3.5的遥控指令为A~H 其HEX都大于10
+        {	
+        
+            if(uart_receive==0x5A)	
+                Flag_Qian=0,Flag_Hou=0,Flag_Left=0,Flag_Right=0;//////////////刹车
+            else if(uart_receive==0x41)	
+                Flag_Qian=1,Flag_Hou=0,Flag_Left=0,Flag_Right=0;//////////////前
+            else if(uart_receive==0x45)	
+                Flag_Qian=0,Flag_Hou=1,Flag_Left=0,Flag_Right=0;//////////////后
+            else if(uart_receive==0x42||uart_receive==0x43||uart_receive==0x44)	
+                Flag_Qian=0,Flag_Hou=0,Flag_Left=0,Flag_Right=1;  //左
+            else if(uart_receive==0x46||uart_receive==0x47||uart_receive==0x48)	    //右
+                Flag_Qian=0,Flag_Hou=0,Flag_Left=1,Flag_Right=0;
+            else 
+                Flag_Qian=0,Flag_Hou=0,Flag_Left=0,Flag_Right=0;//////////////刹车
+        }
+        
+        mode_data[2]=mode_data[1];
+        mode_data[1]=mode_data[0];
+    }  											 
+} 
 

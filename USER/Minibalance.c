@@ -16,6 +16,7 @@ int Temperature;                            //显示温度
 int Voltage;                                //电池电压采样相关的变量
 float Angle_Balance,Gyro_Balance,Gyro_Turn; //平衡倾角 平衡陀螺仪 转向陀螺仪
 float Show_Data_Mb;                     //全局显示变量，用于显示需要查看的数据
+u32 g_distance = 0;                               //超声波测距
 
 // usart2 	
 u8 RxBuffer2[1000] = {0x00};	 	
@@ -24,7 +25,11 @@ u16 RxCounter2 = 0;	// 接收计数，记录当前帧有效数据个数，不清零
 u16 RxCounter2_frame = 0;	// 接收完一整帧之后的字符数量
 u8 ReceiveState2 = 0;	
 float g_att_kp = 300, g_att_kd = 0.6;
-float g_vel_kp = 0.60, g_vel_ki = 0.004;
+//float g_vel_kp = 0.6, g_vel_ki = 0.0045;
+float g_vel_kp = 500, g_vel_ki = 0; // 三轮
+
+//float g_vel_kp = 0.65, g_vel_ki = 0.0035;
+
 u8 FLAG_stop_uart2_debug_msg = 0; // 接收调参信息时，1:禁止打印，除非正常收到数据
 
 void get_tuned_parameter();
@@ -36,17 +41,16 @@ int main(void)
     while(1)
     {
         Temperature = Read_Temperature();  //===读取MPU6050内置温度传感器数据，近似表示主板温度。	
-        // -YJ- 10.01
         if(Flag_Show==0)          //使用MiniBalanceV3.5 APP和OLED显示屏
         {
-//            APP_Show();	
+            APP_Show();	
             oled_show();          //===显示屏打开
         }
         else                      //使用MiniBalanceV3.5上位机 上位机使用的时候需要严格的时序，故此时关闭app监控部分和OLED显示屏
         {
             DataScope();          //开启MiniBalanceV3.5上位机
         }	       
-        get_tuned_parameter();
+//        get_tuned_parameter();
         delay_ms(10);	//延时减缓数据传输频率，确保通信的稳定
 
     } 
